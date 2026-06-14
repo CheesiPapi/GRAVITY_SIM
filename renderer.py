@@ -1,3 +1,4 @@
+import numpy as np
 import vtk
 from physics import update_physics
 
@@ -40,7 +41,7 @@ class SimulationRenderer:
             if body.mass > 1000:
                 actor.GetProperty().SetColor(1.0, 0.9, 0.1) # Sun
             else:
-                actor.GetProperty().SetColor(0.2, 0.5, 1.0) # Planet
+                actor.GetProperty().SetColor(np.random.uniform(0.0, 1.0), np.random.uniform(0.0, 1.0), np.random.uniform(0.0, 1.0)) # Planet
             
             self.renderer.AddActor(actor)
             self.actors.append(actor)
@@ -51,7 +52,7 @@ class SimulationRenderer:
         
     def update_frame(self, obj, event):
         # Step 1: Run the math to find new positions
-        update_physics(self.bodies, self.dt, G=1000) # We use a stronger G for more dramatic motion in our small universe
+        update_physics(self.bodies, self.dt, G=100) # We use a stronger G for more dramatic motion in our small universe
         
         # Step 2: Move the VTK actors to match the new math positions
         for i, body in enumerate(self.bodies):

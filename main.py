@@ -14,7 +14,7 @@ def generate_bodies(num_bodies):
         mass = np.random.uniform(10, 50)
         radius = mass * 0.05 
         position = np.random.uniform(-300, 300, size=3)
-        velocity = np.random.uniform(-10, 10, size=3)
+        velocity = np.random.uniform(-50, 50, size=3)
         bodies.append(Planet(mass, radius, position, velocity))
         
     return bodies
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     my_solar_system = generate_bodies(100) # Let's spawn 100 planets!
     
     # Our time step (dt). If things move too fast/slow, change this number.
-    dt = 0.005 
+    dt = 0.01
     
     print("Launching simulator...")
     sim = SimulationRenderer(my_solar_system, dt)
