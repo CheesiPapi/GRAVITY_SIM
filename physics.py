@@ -1,59 +1,63 @@
-# physics file
 import numpy as np
 
-class Physics:
-    def __init__(self, G=6.67430e-11):
+class Simulation:
+    def __init__(self, bodies, G=200.0, softening=0.1, restitution=1.0):
+        self.bodies = bodies
         self.G = G
-        self.force = np.array([0.0, 0.0, 0.0])
-        self.velocity = np.array([0.0, 0.0, 0.0])
-        self.position = np.array([0.0, 0.0, 0.0])
-        self.mass = 1.0
-        self.radius = 1.0
-        self.bounce = False
-        self.collision_response = None
-        self.dynamic_collision = False
-        self.bodies = []
+        self.softening = softening
+        self.restitution = restitution
 
-    def dist_diff(self, other):
-        diff = other.position - self.position
-        return np.sqrt(np.sum(diff**2))
+    def compute_forces(self):
+        for b in self.bodies:
+            b.force[:] = 0.0
+        n = len(self.bodies)
+        for i in range(n):
+            for j in range(i + 1, n):
+                a, b = self.bodies[i], self.bodies[j]
+                diff = b.position - a.position
+                dist2 = diff @ diff + self.softening**2
+                dist = np.sqrt(dist2)
+                f = self.G * a.mass * b.mass / dist2
+                force = f * diff / dist
+                a.force += force      # equal and opposite
+                b.force -= force
 
-    def bounce(self):
-        self.bounce = True
-        self.collision_response = True
-        self.dynamic_collision = True
-        self.force = np.array([0.0, 0.0, 0.0])
-        self.velocity = np.array([0.0, 0.0, 0.0])
-        self.position = np.array([0.0, 0.0, 0.0])
+    def handle_collisions(self):
+        n = len(self.bodies)
+        for i in range(n):
+            for j in range(i + 1, n):
+                a, b = self.bodies[i], self.bodies[j]
+                diff = b.position - a.position
+                dist = np.linalg.norm(diff)
+                min_dist = a.radius + b.radius
+                if dist >= min_dist or dist == 0.0:
+                    continue
 
-    def handle_collision(self, other):
-        if self.dist_diff(other) < self.radius + other.radius:
-            self.dynamic_collision(self, other)
-            self.bounce = True
-            self.collision_response = True
-            other.bounce = True
-            other.collision_response = True
-            return True
-        return False
-    
-    def gravity_force(self, other):
-        diff = other.position - self.position
-        dist = np.sqrt(np.sum(diff**2))
-        if dist == 0:
-            return np.array([0.0, 0.0, 0.0])
-        F = self.G * ((self.mass * other.mass) / dist**2)
-        unit_direction = diff / dist
-        force_vector = F * unit_direction
-        return force_vector
-    
-    def update_physics(self, dt, G=6.67430e-11):
-        total_force = np.array([0.0, 0.0, 0.0])
-        for other in self.bodies:
-            if self is other:
-                continue
-            force_vector = self.gravity_force(other)
-            total_force += force_vector
-        acceleration = total_force / self.mass
-        self.velocity += acceleration * dt
-        self.position += self.velocity * dt
+                normal = diff / dist
+                inv_a, inv_b = 1.0 / a.mass, 1.0 / b.mass
+                inv_sum = inv_a + inv_b
 
+                # 1. separate the overlap (lighter body moves more)
+                overlap = min_dist - dist
+                a.position -= normal * overlap * inv_a / inv_sum
+                b.position += normal * overlap * inv_b / inv_sum
+
+                # 2. impulse along the normal
+                vn = (b.velocity - a.velocity) @ normal
+                if vn > 0:
+                    continue  # already separating
+                J = -(1.0 + self.restitution) * vn / inv_sum
+                a.velocity -= J * normal * inv_a
+                b.velocity += J * normal * inv_b
+
+    def step(self, dt):
+        # leapfrog: half kick, drift, recompute forces, half kick
+        self.compute_forces()
+        for b in self.bodies:
+            b.velocity += 0.5 * dt * b.force / b.mass
+            b.position += dt * b.velocity
+        self.compute_forces()
+        for b in self.bodies:
+            b.velocity += 0.5 * dt * b.force / b.mass
+
+        self.handle_collisions()

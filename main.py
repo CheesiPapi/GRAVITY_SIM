@@ -1,32 +1,42 @@
 import numpy as np
-from bodies import Planet
-from renderer import SimulationRenderer # Import our new tool!
+from bodies import Body
+from physics import Simulation
+from renderer import SimulationRenderer
+
+G = 200.0
+
+def orbit_velocity(sun, position):
+    """Velocity for a roughly circular orbit around the sun."""
+    r_vec = position - sun.position
+    r = np.linalg.norm(r_vec)
+    speed = np.sqrt(G * sun.mass / r)
+    tangent = np.cross(r_vec, np.random.normal(size=3))  # perpendicular to r_vec
+    tangent /= np.linalg.norm(tangent)
+    return tangent * speed
 
 def generate_bodies(num_bodies):
-    bodies = []
-    
-    # Create the central Star manually
-    sun = Planet(mass=10000.0, radius=8.0, position=[0,0,0], velocity=[0,0,0])
-    bodies.append(sun)
-    
-    # Generate the random orbiting planets
+    sun = Body(position=[0, 0, 0], velocity=[0, 0, 0],
+               mass=10000.0, radius=10.0, color=(1.0, 1.0, 0.0))
+    bodies = [sun]
+
     for _ in range(num_bodies):
         mass = np.random.uniform(10, 50)
-        radius = mass * 0.05 
-        position = np.random.uniform(-100, 100, size=3)
-        velocity = np.random.uniform(-50, 50, size=3)
-        bodies.append(Planet(mass, radius, position, velocity))
-        
-    return bodies
-    
+        radius = mass * 0.05
 
-# --- RUN THE UNIVERSE ---
+        direction = np.random.normal(size=3)
+        direction /= np.linalg.norm(direction)
+        position = direction * np.random.uniform(40, 120)   # stay outside the sun
+
+        velocity = orbit_velocity(sun, position)
+        bodies.append(Body(position, velocity, mass, radius))
+
+    return bodies
+
 if __name__ == "__main__":
     print("Generating universe...")
-    my_solar_system = generate_bodies(20)
-    # Our time step (dt). If things move too fast/slow, change this number.
-    dt = 0.01
-    
+    bodies = generate_bodies(5)
+    sim = Simulation(bodies, G=G, softening=0.1, restitution=1.0)
+
     print("Launching simulator...")
-    sim = SimulationRenderer(my_solar_system, dt)
-    sim.start()
+    app = SimulationRenderer(sim, dt=0.01)
+    app.start()
