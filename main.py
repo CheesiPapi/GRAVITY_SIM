@@ -7,7 +7,7 @@ G = 200.0
 
 if __name__ == "__main__":
     print("Generating universe...")
-    bodies = make_solar_system(5, G)
+    bodies = make_solar_system(10, G)
     sim = Simulation(bodies, G=G, softening=0.1, restitution=1.0)
 
     print("Launching simulator...")

@@ -24,6 +24,9 @@ class SimulationRenderer:
         self.interactor.SetRenderWindow(self.render_window)
         self.interactor.Initialize()
         self.interactor.AddObserver("TimerEvent", self.on_timer)
+        self.interactor.AddObserver("KeyPressEvent", self.on_key)
+        self.interactor.AddObserver("MouseWheelForwardEvent", lambda o, e: self.zoom(1.1))
+        self.interactor.AddObserver("MouseWheelBackwardEvent", lambda o, e: self.zoom(1/1.1))
         self.interactor.CreateRepeatingTimer(16)
 
     def rebuild_actors(self):
@@ -55,6 +58,32 @@ class SimulationRenderer:
         self.sim.bodies = bodies
         self.rebuild_actors()
         self.render_window.Render()
+
+    ROTATE_STEP = 3.0   # degrees per key press (holding a key repeats)
+
+    def on_key(self, obj, event):
+        key = obj.GetKeySym()
+        camera = self.renderer.GetActiveCamera()
+
+        if key == "Left":
+            camera.Azimuth(self.ROTATE_STEP)
+        elif key == "Right":
+            camera.Azimuth(-self.ROTATE_STEP)
+        elif key == "Up":
+            camera.Elevation(self.ROTATE_STEP)
+            camera.OrthogonalizeViewUp()
+        elif key == "Down":
+            camera.Elevation(-self.ROTATE_STEP)
+            camera.OrthogonalizeViewUp()
+        else:
+            return
+
+        self.renderer.ResetCameraClippingRange()
+        self.render_window.Render()
+
+    def zoom(self, factor):
+        self.renderer.GetActiveCamera().Dolly(factor)
+        self.renderer.ResetCameraClippingRange()
 
     def advance(self):
         if self.paused:
