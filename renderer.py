@@ -1,6 +1,5 @@
 import numpy as np
 import vtk
-from physics import update_physics
 
 class SimulationRenderer:
     def __init__(self, bodies, dt):
@@ -31,32 +30,11 @@ class SimulationRenderer:
             
             mapper = vtk.vtkPolyDataMapper()
             mapper.SetInputConnection(source.GetOutputPort())
-            
             actor = vtk.vtkActor()
             actor.SetMapper(mapper)
-            # Place it at the planet's starting XYZ coordinates
-            actor.SetPosition(body.position[0], body.position[1], body.position[2])
-            
-            # Make the heavy sun Yellow, and the smaller planets Blue
-            if body.mass > 1000:
-                actor.GetProperty().SetColor(1.0, 0.9, 0.1) # Sun
-            else:
-                actor.GetProperty().SetColor(np.random.uniform(0.0, 1.0), np.random.uniform(0.0, 1.0), np.random.uniform(0.0, 1.0)) # Planet
-            
             self.renderer.AddActor(actor)
             self.actors.append(actor)
-            
-        # 3. Create the Simulation Loop (The Heartbeat)
-        self.interactor.AddObserver('TimerEvent', self.update_frame)
-      
-        
-    def update_frame(self, obj, event):
-        # Step 1: Run the math to find new positions
-        update_physics(self.bodies, self.dt, G=100) # We use a stronger G for more dramatic motion in our small universe
-        
-        # Step 2: Move the VTK actors to match the new math positions
-        for i, body in enumerate(self.bodies):
-            self.actors[i].SetPosition(body.position[0], body.position[1], body.position[2])
+            self.actors[0].SetPosition(body.position[0], body.position[1], body.position[2])
             
         # Step 3: Tell the window to draw the new frame
         self.render_window.Render()
