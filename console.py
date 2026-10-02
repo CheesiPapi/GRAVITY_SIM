@@ -14,6 +14,8 @@ import generators
 
 
 def center_of_mass(bodies):
+    if not bodies:
+        return np.zeros(3)
     masses = np.array([b.mass for b in bodies])
     positions = np.array([b.position for b in bodies])
     return (masses[:, None] * positions).sum(axis=0) / masses.sum()
@@ -22,7 +24,7 @@ def center_of_mass(bodies):
 class Console:
     def __init__(self, app):
         self.app = app            # the SimulationRenderer
-        self.follow = None        # None, "com", or a body index (as a string)
+        self.follow = None        # None, "com", or a Body
         self._queue = queue.Queue()
         self._done = threading.Event()
         self._commands = {}       # name -> (handler, usage, description)
@@ -44,6 +46,8 @@ class Console:
         self.add("recenter", self.cmd_recenter, "recenter [com|<n>]", "aim camera at center of mass or body n")
         self.add("follow", self.cmd_follow, "follow [com|<n>|off]", "keep camera on center of mass or body n")
         self.add("data|positions", self.cmd_data, "data [n]", "mass/position/velocity of all bodies, or body n")
+        self.add("collisions", self.cmd_collisions, "collisions [bounce|merge]", "bounce off, or merge/shatter")
+        self.add("shatter", self.cmd_shatter, "shatter [factor]", "show/set shatter threshold (higher = harder)")
         self.add("disk", self.cmd_disk, "disk [count]", "restart as a rotating disk around a sun")
         self.add("solar", self.cmd_solar, "solar [count]", "restart with random orbiting planets")
         self.add("status", self.cmd_status, "status", "show speed, pause state, body count")
@@ -76,10 +80,11 @@ class Console:
             self.execute(line)
             self._done.set()
         if self.follow is not None:
-            try:
-                self._look_at(self._target_point(self.follow))
-            except (IndexError, ValueError):
-                self.follow = None
+            bodies = self.app.sim.bodies
+            if not isinstance(self.follow, str) and self.follow not in bodies:
+                print("followed body no longer exists; following center of mass")
+                self.follow = "com"
+            self._look_at(self._target_point(self.follow))
 
     def execute(self, line):
         words = line.lower().split()
@@ -94,11 +99,16 @@ class Console:
         print(f"unknown command: {line!r} (try 'help')")
 
     # ---------- helpers ----------
-    def _target_point(self, arg):
-        bodies = self.app.sim.bodies
+    def _target(self, arg):
+        """'com' stays 'com'; a number becomes that Body (so merges don't shift it)."""
         if arg == "com":
-            return center_of_mass(bodies)
-        return bodies[int(arg)].position.copy()
+            return "com"
+        return self.app.sim.bodies[int(arg)]
+
+    def _target_point(self, target):
+        if isinstance(target, str):
+            return center_of_mass(self.app.sim.bodies)
+        return target.position.copy()
 
     def _look_at(self, point):
         camera = self.app.renderer.GetActiveCamera()
@@ -123,7 +133,7 @@ class Console:
         for handler, usage, description in self._commands.values():
             if handler not in seen:
                 seen.add(handler)
-                print(f"  {usage:<24} {description}")
+                print(f"  {usage:<26} {description}")
 
     def cmd_speed_up(self, args):
         self._set_speed(self.app.speed * (float(args[0]) if args else 2.0))
@@ -146,7 +156,7 @@ class Console:
         print("running")
 
     def cmd_recenter(self, args):
-        self._look_at(self._target_point(args[0] if args else "com"))
+        self._look_at(self._target_point(self._target(args[0] if args else "com")))
         self.app.render_window.Render()
         print("recentered")
 
@@ -156,8 +166,7 @@ class Console:
             self.follow = None
             print("follow off")
             return
-        self._target_point(arg)   # raises if the target is invalid
-        self.follow = arg
+        self.follow = self._target(arg)
         print(f"following {arg}")
 
     def cmd_data(self, args):
@@ -171,19 +180,38 @@ class Console:
         if not args:
             print(f"center of mass: {self._fmt(center_of_mass(bodies))}")
 
+    def cmd_collisions(self, args):
+        sim = self.app.sim
+        if args:
+            if args[0] not in ("bounce", "merge"):
+                print("usage: collisions [bounce|merge]")
+                return
+            sim.collision_mode = args[0]
+        print(f"collisions: {sim.collision_mode}")
+
+    def cmd_shatter(self, args):
+        sim = self.app.sim
+        if args:
+            sim.shatter_factor = float(args[0])
+        print(f"shatter factor: {sim.shatter_factor:g} (higher = harder to shatter)")
+
     def cmd_disk(self, args):
         count = int(args[0]) if args else 40
+        self.follow = None
         self.app.set_bodies(generators.make_disk(count, self.app.sim.G))
         print(f"started disk with {count} bodies")
 
     def cmd_solar(self, args):
         count = int(args[0]) if args else 5
+        self.follow = None
         self.app.set_bodies(generators.make_solar_system(count, self.app.sim.G))
         print(f"started solar system with {count} planets")
 
     def cmd_status(self, args):
+        follow = "off" if self.follow is None else ("com" if isinstance(self.follow, str) else "a body")
         print(f"bodies: {len(self.app.sim.bodies)}  speed: x{self.app.speed:g}  "
-              f"paused: {self.app.paused}  dt: {self.app.dt}  follow: {self.follow}")
+              f"paused: {self.app.paused}  dt: {self.app.dt}  "
+              f"collisions: {self.app.sim.collision_mode}  follow: {follow}")
 
     def cmd_quit(self, args):
         print("closing simulator")
