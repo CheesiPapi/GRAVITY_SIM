@@ -1,4 +1,12 @@
+import time
+
+import numpy as np
 import vtk
+
+from hud import Overlay
+from vectors import VectorField
+
+VECTOR_MODES = ("off", "vel", "acc", "both")
 
 
 class Flash:
@@ -54,6 +62,14 @@ class SimulationRenderer:
         self.tick_hooks = []      # callables run at the start of every tick
         self.actors = {}          # Body -> vtkActor
         self.flashes = []
+        self.console = None
+
+        self.vector_mode = "vel"  # off | vel | acc | both
+        self.vector_scale = 1.0   # multiplier on the default arrow lengths
+
+        self.fps = 60.0           # smoothed, shown in the HUD
+        self.physics_ms = 0.0
+        self._last_tick = None
 
         self.renderer = vtk.vtkRenderer()
         self.renderer.SetBackground(0.05, 0.05, 0.05)
@@ -63,18 +79,32 @@ class SimulationRenderer:
         self.render_window.SetSize(1000, 800)
         self.render_window.SetWindowName("Gravity Simulator")
 
+        # arrow lengths = magnitude * scale (tuned for G ~ 200; adjust with 'vectors scale')
+        self.vel_arrows = VectorField(self.renderer, color=(0.2, 0.9, 1.0), scale=0.2)
+        self.acc_arrows = VectorField(self.renderer, color=(1.0, 0.35, 0.3), scale=0.05)
+        self.overlay = Overlay(self)
+
         self.sync_actors()
         self.renderer.ResetCamera()
 
         self.interactor = vtk.vtkRenderWindowInteractor()
         self.interactor.SetRenderWindow(self.render_window)
-        self.interactor.SetInteractorStyle(vtk.vtkInteractorStyleUser())  # mouse no longer moves the camera
+        style = vtk.vtkInteractorStyleUser()      # mouse no longer moves the camera
+        # Swallow VTK's built-in letter shortcuts (q/e = exit, w = wireframe,
+        # r = reset camera, ...) so typing commands can't trigger them.
+        style.AddObserver("CharEvent", lambda o, e: None)
+        self.interactor.SetInteractorStyle(style)
         self.interactor.Initialize()
         self.interactor.AddObserver("TimerEvent", self.on_timer)
         self.interactor.AddObserver("KeyPressEvent", self.on_key)
         self.interactor.AddObserver("MouseWheelForwardEvent", lambda o, e: self.zoom(1.1))
         self.interactor.AddObserver("MouseWheelBackwardEvent", lambda o, e: self.zoom(1 / 1.1))
         self.interactor.CreateRepeatingTimer(16)
+
+    def attach_console(self, console):
+        self.console = console
+        self.overlay.console = console
+        self.tick_hooks.append(console.tick)
 
     # ---------- actors ----------
     def _make_actor(self, body):
@@ -107,10 +137,30 @@ class SimulationRenderer:
         for body, actor in self.actors.items():
             actor.SetPosition(*body.position)
 
+    def update_vectors(self):
+        show_vel = self.vector_mode in ("vel", "both")
+        show_acc = self.vector_mode in ("acc", "both")
+        bodies = self.sim.bodies
+        self.vel_arrows.set_visible(show_vel and bodies)
+        self.acc_arrows.set_visible(show_acc and bodies)
+        if not bodies or not (show_vel or show_acc):
+            return
+
+        pos = np.array([b.position for b in bodies])
+        rad = np.array([b.radius for b in bodies])
+        if show_vel:
+            vel = np.array([b.velocity for b in bodies])
+            self.vel_arrows.update(pos, vel, rad, self.vector_scale)
+        if show_acc:
+            acc = np.array([b.force / b.mass for b in bodies])
+            self.acc_arrows.update(pos, acc, rad, self.vector_scale)
+
     def set_bodies(self, bodies):
         """Swap in a whole new set of bodies (used by the console)."""
         self.sim.bodies = bodies
         self.sim.events.clear()
+        self.sim.time = 0.0
+        self.sim.step_count = 0
         self.sync_actors()
         self.renderer.ResetCamera()
         self.render_window.Render()
@@ -126,31 +176,44 @@ class SimulationRenderer:
             self.sim.step(self.dt * self.speed)
 
     def on_timer(self, obj, event):
+        now = time.perf_counter()
+        if self._last_tick is not None:
+            self.fps = 0.9 * self.fps + 0.1 / max(now - self._last_tick, 1e-6)
+        self._last_tick = now
+
         for hook in self.tick_hooks:
             hook()
+
+        start = time.perf_counter()
         self.advance()
+        self.physics_ms = 0.9 * self.physics_ms + 0.1 * (time.perf_counter() - start) * 1000.0
+
         self.sync_actors()
         self.update_actors()
+        self.update_vectors()
 
         for ev in self.sim.pop_events():
             self.flashes.append(Flash(self.renderer, ev["point"], ev["size"], ev["shatter"]))
         self.flashes = [f for f in self.flashes if f.update()]
 
+        self.overlay.update()
         self.render_window.Render()
 
-    # ---------- camera controls ----------
+    # ---------- keyboard / camera ----------
     def on_key(self, obj, event):
-        key = obj.GetKeySym()
-        camera = self.renderer.GetActiveCamera()
+        keysym = obj.GetKeySym()
+        if self.console is not None and self.console.handle_key(keysym, obj.GetKeyCode()):
+            return                      # typing a command, or a console hotkey
 
-        if key == "Left":
+        camera = self.renderer.GetActiveCamera()
+        if keysym == "Left":
             camera.Azimuth(self.ROTATE_STEP)
-        elif key == "Right":
+        elif keysym == "Right":
             camera.Azimuth(-self.ROTATE_STEP)
-        elif key == "Up":
+        elif keysym == "Up":
             camera.Elevation(self.ROTATE_STEP)
             camera.OrthogonalizeViewUp()
-        elif key == "Down":
+        elif keysym == "Down":
             camera.Elevation(-self.ROTATE_STEP)
             camera.OrthogonalizeViewUp()
         else:

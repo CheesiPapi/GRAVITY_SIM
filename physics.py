@@ -32,7 +32,7 @@ def spread_directions(n):
 class Simulation:
     def __init__(self, bodies, G=200.0, softening=0.1, restitution=1.0,
                  collision_mode="merge", shatter_factor=1.5,
-                 min_fragment_mass=2.0):
+                 min_fragment_mass=2.0, cull_distance=500.0):
         self.bodies = bodies
         self.G = G
         self.softening = softening
@@ -40,7 +40,10 @@ class Simulation:
         self.collision_mode = collision_mode      # "merge" or "bounce"
         self.shatter_factor = shatter_factor      # higher = harder to shatter
         self.min_fragment_mass = min_fragment_mass
+        self.cull_distance = cull_distance        # None = never delete far bodies
         self.events = []
+        self.time = 0.0                           # simulated time elapsed
+        self.step_count = 0
 
     # ---------- gravity ----------
     def compute_forces(self):
@@ -69,6 +72,20 @@ class Simulation:
             b.velocity += 0.5 * dt * b.force / b.mass
 
         self.handle_collisions()
+        self._cull_distant()
+        self.time += dt
+        self.step_count += 1
+
+    def _cull_distant(self):
+        """Delete bodies farther than cull_distance from the center of mass."""
+        if self.cull_distance is None or len(self.bodies) < 2:
+            return
+        pos = np.array([b.position for b in self.bodies])
+        mass = np.array([b.mass for b in self.bodies])
+        center = (mass[:, None] * pos).sum(axis=0) / mass.sum()
+        keep = np.linalg.norm(pos - center, axis=1) <= self.cull_distance
+        if not keep.all():
+            self.bodies[:] = [b for b, k in zip(self.bodies, keep) if k]
 
     def pop_events(self):
         events, self.events = self.events, []
