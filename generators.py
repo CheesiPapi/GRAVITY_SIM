@@ -5,10 +5,13 @@ from bodies import Body
 SUN_MASS = 10000.0
 SUN_RADIUS = 10.0
 
-
 def _make_sun():
     return Body(position=[0, 0, 0], velocity=[0, 0, 0],
                 mass=SUN_MASS, radius=SUN_RADIUS, color=(1.0, 1.0, 0.0))
+
+def _make_center_of_mass():
+    return Body(position=[0, 0, 0], velocity=[0, 0, 0],
+                mass=0, radius=0, color=(0.5, 0.5, 0.5))
 
 
 def make_solar_system(num_planets, G):
@@ -50,3 +53,28 @@ def make_disk(num_bodies, G, r_min=40.0, r_max=140.0, thickness=3.0):
 
         bodies.append(Body(position, velocity, mass, radius))
     return bodies
+
+
+## Trying to make a cloud of particles that will develop into a disk or other form.
+## Ethan Moss GitHub user:CheesiPapi 
+## Oct/02/2026
+#
+# def make_cloud_system(num_planets, G,  r_min=40.0, r_max=140.0):
+#     """Cloud of bodies orbiting a center of mass."""
+#     bodies = [_make_center_of_mass()]
+#     for _ in range(num_planets):
+#         mass = np.random.uniform(10, 50)
+#         radius = mass * 0.05
+
+#         r = np.random.uniform(r_min, r_max)
+#         theta = np.random.uniform(0, 2 * np.pi)
+#         position = [r * np.cos(theta), r * np.sin(theta),
+#                     np.tan(theta)]
+
+#         # any vector perpendicular to the radius, scaled to circular-orbit speed
+#         tangent = np.cross(position, np.random.normal(size=3))
+#         tangent /= np.linalg.norm(tangent)
+#         velocity = tangent * np.sqrt(G * 0.01 / r)
+
+#         bodies.append(Body(position, velocity, mass, radius))
+#     return bodies

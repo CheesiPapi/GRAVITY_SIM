@@ -76,6 +76,7 @@ class Console:
         self.add("shatter", self.cmd_shatter, "shatter [factor]", "shatter threshold (higher = harder)")
         self.add("cull", self.cmd_cull, "cull [distance|off]", "delete bodies this far from the center")
         self.add("disk", self.cmd_disk, "disk [count]", "restart as a rotating disk around a sun")
+        self.add("cloud", self.cmd_cloud, "cloud [count]", "restart with a cloud of bodies falling towards a center of gravity")
         self.add("solar", self.cmd_solar, "solar [count]", "restart with random orbiting planets")
         self.add("status", self.cmd_status, "status", "one-line status")
         self.add("quit|exit", self.cmd_quit, "quit", "close the simulator")
@@ -289,11 +290,11 @@ class Console:
     def cmd_data(self, args):
         bodies = self.app.sim.bodies
         indices = [int(args[0])] if args else range(len(bodies))
-        self.say(f"{'#':>3} {'mass':>8} {'rad':>5}  {'position':<28} velocity")
+        self.say(f"{'#':>3} {'mass':>8} {'rad':>5}  {'position':<30} velocity")
         for k, i in enumerate(indices):
             b = bodies[i]
             self.say(f"{i:>3} {b.mass:>8.1f} {b.radius:>5.1f}  "
-                     f"{self._fmt(b.position):<28} {self._fmt(b.velocity)}",
+                     f"{self._fmt(b.position):<30} {self._fmt(b.velocity)}",
                      screen=k < DATA_ROWS_ON_SCREEN)
         if len(indices) > DATA_ROWS_ON_SCREEN:
             self.say(f"... {len(indices) - DATA_ROWS_ON_SCREEN} more rows (full table in terminal)")
@@ -333,6 +334,12 @@ class Console:
         self.follow = None
         self.app.set_bodies(generators.make_solar_system(count, self.app.sim.G))
         self.say(f"started solar system with {count} planets")
+
+    def cmd_cloud(self, args):
+        count = int(args[0]) if args else 5
+        self.follow = None
+        self.app.set_bodies(generators.make_cloud_system(count, self.app.sim.G))
+        self.say(f"started cloud system with {count} bodies")
 
     def cmd_status(self, args):
         a, s = self.app, self.app.sim
