@@ -1,7 +1,7 @@
 """On-screen text: status HUD (top-left) and console log + prompt (bottom-left)."""
 import vtk
 
-HINT = "Enter: command   arrows: rotate   space: pause   v: vectors   h: HUD"
+HINT = "Enter: command   arrows: rotate   space: pause   v: vectors   t: trails   h: HUD"
 
 
 def _make_text(size, color, opacity=0.4):
@@ -84,6 +84,7 @@ class Overlay:
             f"collisions  {sim.collision_mode}",
             f"cull dist   {cull}",
             f"vectors     {vectors}",
+            f"trails      {'off' if not app.trails.enabled else str(app.trails.length) + ' pts'}",
             f"follow      {follow}",
             f"energy (KE) {kinetic:,.0f}",
             f"fps {app.fps:4.0f}   physics {app.physics_ms:5.1f} ms",

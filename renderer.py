@@ -4,6 +4,7 @@ import numpy as np
 import vtk
 
 from hud import Overlay
+from trails import Trails
 from vectors import VectorField
 
 VECTOR_MODES = ("off", "vel", "acc", "both")
@@ -82,6 +83,7 @@ class SimulationRenderer:
         # arrow lengths = magnitude * scale (tuned for G ~ 200; adjust with 'vectors scale')
         self.vel_arrows = VectorField(self.renderer, color=(0.2, 0.9, 1.0), scale=0.2)
         self.acc_arrows = VectorField(self.renderer, color=(1.0, 0.35, 0.3), scale=0.05)
+        self.trails = Trails(self.renderer, length=120)
         self.overlay = Overlay(self)
 
         self.sync_actors()
@@ -161,6 +163,8 @@ class SimulationRenderer:
         self.sim.events.clear()
         self.sim.time = 0.0
         self.sim.step_count = 0
+        self.sim.invalidate_cache()
+        self.trails.clear()
         self.sync_actors()
         self.renderer.ResetCamera()
         self.render_window.Render()
@@ -191,6 +195,7 @@ class SimulationRenderer:
         self.sync_actors()
         self.update_actors()
         self.update_vectors()
+        self.trails.update(self.sim.bodies, record=not self.paused)
 
         for ev in self.sim.pop_events():
             self.flashes.append(Flash(self.renderer, ev["point"], ev["size"], ev["shatter"]))

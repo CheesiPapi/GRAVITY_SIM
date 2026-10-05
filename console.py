@@ -18,6 +18,7 @@ HOTKEYS = {
     "space": "pause",
     "h": "hud",
     "v": "vectors",
+    "t": "trails",
     "c": "recenter",
     "plus": "speed up",
     "equal": "speed up",
@@ -50,6 +51,7 @@ class Console:
         self.buffer = ""
         self.log = deque(maxlen=200)      # (timestamp, text)
         self.history = []
+        self._saved_mode = None   # collision mode to restore after a scenario that forced one
         self._hist_pos = 0
         self._commands = {}       # name -> (handler, usage, description)
         self._register_commands()
@@ -75,9 +77,10 @@ class Console:
         self.add("collisions", self.cmd_collisions, "collisions [bounce|merge]", "bounce off, or merge/shatter")
         self.add("shatter", self.cmd_shatter, "shatter [factor]", "shatter threshold (higher = harder)")
         self.add("cull", self.cmd_cull, "cull [distance|off]", "delete bodies this far from the center")
-        self.add("disk", self.cmd_disk, "disk [count]", "restart as a rotating disk around a sun")
-        self.add("cloud", self.cmd_cloud, "cloud [count]", "restart with a cloud of bodies falling towards a center of gravity")
-        self.add("solar", self.cmd_solar, "solar [count]", "restart with random orbiting planets")
+        self.add("trails", self.cmd_trails, "trails [on|off|clear|<length>]", "fading orbit trails (no arg = toggle)")
+        self.add("scenarios", self.cmd_scenarios, "scenarios", "list the starting setups")
+        for name, (_, default, description, _, _) in generators.SCENARIOS.items():
+            self.add(name, self._scenario_command(name), f"{name} [count]", description)
         self.add("status", self.cmd_status, "status", "one-line status")
         self.add("quit|exit", self.cmd_quit, "quit", "close the simulator")
 
@@ -223,12 +226,22 @@ class Console:
 
     # ---------- commands ----------
     def cmd_help(self, args):
-        seen = set()
-        for handler, usage, description in self._commands.values():
+        if args:
+            name = " ".join(args).lower()
+            if name in self._commands:
+                _, usage, description = self._commands[name]
+                self.say(f"{usage}  -  {description}")
+            else:
+                self.say(f"no command {name!r}")
+            return
+        usages, seen = [], set()
+        for handler, usage, _ in self._commands.values():
             if handler not in seen:
                 seen.add(handler)
-                self.say(f"{usage:<27}{description}")
-        self.say("keys: Enter open/close  Esc close  Tab complete  Up/Down history")
+                usages.append(usage)
+        for i in range(0, len(usages), 3):
+            self.say("".join(f"{u:<36}" for u in usages[i:i + 3]).rstrip())
+        self.say("'help <command>' explains one. Enter open/close  Esc close  Tab complete  Up/Down history")
 
     def cmd_speed_up(self, args):
         self._set_speed(self.app.speed * (float(args[0]) if args else 2.0))
@@ -308,6 +321,7 @@ class Console:
                 self.say("usage: collisions [bounce|merge]")
                 return
             sim.collision_mode = args[0]
+            self._saved_mode = None                       # an explicit choice wins
         self.say(f"collisions: {sim.collision_mode}")
 
     def cmd_shatter(self, args):
@@ -323,23 +337,52 @@ class Console:
         value = "off" if sim.cull_distance is None else f"{sim.cull_distance:g}"
         self.say(f"cull distance: {value}")
 
-    def cmd_disk(self, args):
-        count = int(args[0]) if args else 40
-        self.follow = None
-        self.app.set_bodies(generators.make_disk(count, self.app.sim.G))
-        self.say(f"started disk with {count} bodies")
+    def _scenario_command(self, name):
+        def command(args):
+            self.start_scenario(name, int(args[0]) if args else None)
+        return command
 
-    def cmd_solar(self, args):
-        count = int(args[0]) if args else 5
+    def start_scenario(self, name, count=None):
+        build, default, _, min_cull, mode = generators.SCENARIOS[name]
+        count = default if count is None else max(1, count)
+        sim = self.app.sim
         self.follow = None
-        self.app.set_bodies(generators.make_solar_system(count, self.app.sim.G))
-        self.say(f"started solar system with {count} planets")
+        self.app.set_bodies(build(count, sim.G))
+        extra = ""
+        if min_cull is not None and sim.cull_distance is not None and sim.cull_distance < min_cull:
+            sim.cull_distance = min_cull
+            extra = f" (cull distance raised to {min_cull:g})"
+        if mode is not None and sim.collision_mode != mode:
+            if self._saved_mode is None:
+                self._saved_mode = sim.collision_mode      # remember what the user had
+            sim.collision_mode = mode
+            extra += f" (collisions set to {mode})"
+        elif mode is None and self._saved_mode is not None:
+            sim.collision_mode = self._saved_mode          # hand the setting back
+            extra += f" (collisions back to {self._saved_mode})"
+            self._saved_mode = None
+        if len(sim.bodies) > 60 and self.app.vector_mode != "off":
+            self.app.vector_mode = "off"                   # an arrow per body is just clutter here
+            extra += " (vectors off; 'vectors vel' brings them back)"
+        self.say(f"started {name}: {len(sim.bodies)} bodies{extra}")
 
-    def cmd_cloud(self, args):
-        count = int(args[0]) if args else 5
-        self.follow = None
-        self.app.set_bodies(generators.make_cloud_system(count, self.app.sim.G))
-        self.say(f"started cloud system with {count} bodies")
+    def cmd_scenarios(self, args):
+        for name, (_, default, description, _, _) in generators.SCENARIOS.items():
+            self.say(f"{name:<9} [count, default {default}]  {description}")
+
+    def cmd_trails(self, args):
+        trails = self.app.trails
+        arg = args[0] if args else ("off" if trails.enabled else "on")
+        if arg == "on":
+            trails.set_enabled(True)
+        elif arg == "off":
+            trails.set_enabled(False)
+        elif arg == "clear":
+            trails.clear()
+        else:
+            trails.set_length(int(arg))
+            trails.set_enabled(True)
+        self.say(f"trails {'off' if not trails.enabled else f'on, {trails.length} points'}")
 
     def cmd_status(self, args):
         a, s = self.app, self.app.sim
